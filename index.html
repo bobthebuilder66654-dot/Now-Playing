@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Spotify Player</title>
+
+<style>
+body{
+  margin:0;
+  font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+  color:white;
+  overflow:hidden;
+}
+
+.background{
+  position:fixed;
+  inset:0;
+  background-size:cover;
+  background-position:center;
+  filter:blur(60px) brightness(0.5);
+  z-index:-1;
+  transition:0.4s ease;
+}
+
+.player{
+  padding:40px;
+  display:grid;
+  grid-template-columns:400px 1fr;
+  gap:60px;
+}
+
+.cover{
+  width:100%;
+  border-radius:20px;
+  box-shadow:0 20px 40px rgba(0,0,0,0.5);
+}
+
+.info{
+  margin-top:20px;
+}
+
+.title{font-size:22px;font-weight:600;}
+.artist{opacity:0.7;}
+
+.controls{
+  margin-top:20px;
+  display:flex;
+  gap:40px;
+  font-size:26px;
+}
+
+button{
+  background:none;
+  border:none;
+  color:white;
+  cursor:pointer;
+  font-size:26px;
+}
+
+input[type=range]{
+  width:100%;
+  margin-top:20px;
+}
+
+.right{
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+}
+
+@media(max-width:768px){
+  .player{
+    grid-template-columns:1fr;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="background" id="bg"></div>
+
+<div id="loginSection">
+  <button onclick="login()">Connect Spotify</button>
+</div>
+
+<div id="app" style="display:none;">
+  <div class="player">
+
+    <div>
+      <img id="cover" class="cover">
+      <div class="info">
+        <div id="title" class="title"></div>
+        <div id="artist" class="artist"></div>
+      </div>
+
+      <input type="range" id="progress" min="0" max="100" value="0">
+
+      <div class="controls">
+        <button onclick="previous()">⏮</button>
+        <button onclick="playPause()">⏯</button>
+        <button onclick="next()">⏭</button>
+      </div>
+
+      <input type="range" id="volume" min="0" max="100">
+    </div>
+
+    <div class="right">
+      <h2>Now Playing</h2>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const CLIENT_ID="YOUR_CLIENT_ID_HERE";
+const REDIRECT_URI=window.location.origin + "/";
+const SCOPES="user-read-playback-state user-modify-playback-state";
+
+let token=null;
+let currentTrack=null;
+
+function login(){
+  const url=
+    "https://accounts.spotify.com/authorize"+
+    "?client_id="+CLIENT_ID+
+    "&response_type=token"+
+    "&redirect_uri="+encodeURIComponent(REDIRECT_URI)+
+    "&scope="+encodeURIComponent(SCOPES);
+
+  window.location=url;
+}
+
+function getToken(){
+  const hash=window.location.hash;
+  token=new URLSearchParams(hash.substring(1)).get("access_token");
+  if(token){
+    window.location.hash="";
+    document.getElementById("loginSection").style.display="none";
+    document.getElementById("app").style.display="block";
+    setInterval(updatePlayer,1000);
+  }
+}
+
+async function updatePlayer(){
+  const res=await fetch("https://api.spotify.com/v1/me/player",{
+    headers:{Authorization:"Bearer "+token}
+  });
+
+  if(!res.ok)return;
+
+  const data=await res.json();
+  if(!data.item)return;
+
+  currentTrack=data;
+
+  const img=data.item.album.images[0].url;
+  document.getElementById("cover").src=img;
+  document.getElementById("bg").style.backgroundImage="url("+img+")";
+  document.getElementById("title").innerText=data.item.name;
+  document.getElementById("artist").innerText=data.item.artists.map(a=>a.name).join(", ");
+
+  const progress=(data.progress_ms/data.item.duration_ms)*100;
+  document.getElementById("progress").value=progress;
+}
+
+async function playPause(){
+  if(!currentTrack)return;
+
+  const isPlaying=currentTrack.is_playing;
+
+  await fetch("https://api.spotify.com/v1/me/player/"+(isPlaying?"pause":"play"),{
+    method:"PUT",
+    headers:{Authorization:"Bearer "+token}
+  });
+}
+
+async function next(){
+  await fetch("https://api.spotify.com/v1/me/player/next",{
+    method:"POST",
+    headers:{Authorization:"Bearer "+token}
+  });
+}
+
+async function previous(){
+  await fetch("https://api.spotify.com/v1/me/player/previous",{
+    method:"POST",
+    headers:{Authorization:"Bearer "+token}
+  });
+}
+
+document.getElementById("progress").addEventListener("change",async(e)=>{
+  const percent=e.target.value/100;
+  const position=currentTrack.item.duration_ms*percent;
+
+  await fetch("https://api.spotify.com/v1/me/player/seek?position_ms="+Math.floor(position),{
+    method:"PUT",
+    headers:{Authorization:"Bearer "+token}
+  });
+});
+
+document.getElementById("volume").addEventListener("change",async(e)=>{
+  await fetch("https://api.spotify.com/v1/me/player/volume?volume_percent="+e.target.value,{
+    method:"PUT",
+    headers:{Authorization:"Bearer "+token}
+  });
+});
+
+getToken();
+</script>
+
+</body>
+</html>
